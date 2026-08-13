@@ -68,6 +68,20 @@ void XAboutWidget::setData(const DATA &data)
     ui->labelLogo->setPixmap(pixMap);
 }
 
+#ifdef QT_NETWORK_LIB
+// File-scope functor slot: on SSL errors abort the reply and leave the local event loop.
+struct XAboutWidgetSslErrorsFunctor {
+    QEventLoop *pLoop;
+
+    void operator()(QNetworkReply *pReply, const QList<QSslError> &listErrors) const
+    {
+        Q_UNUSED(listErrors)
+        pReply->abort();
+        pLoop->quit();
+    }
+};
+#endif
+
 void XAboutWidget::on_pushButtonCheckUpdates_clicked()
 {
     // TODO GitHub API for checking version
@@ -81,11 +95,9 @@ void XAboutWidget::on_pushButtonCheckUpdates_clicked()
         QNetworkReply *pReply = manager.get(request);
         QEventLoop loop;
         QObject::connect(pReply, SIGNAL(finished()), &loop, SLOT(quit()));
-        QObject::connect(&manager, &QNetworkAccessManager::sslErrors, this, [&loop](QNetworkReply *pReply, const QList<QSslError> &listErrors) {
-            Q_UNUSED(listErrors)
-            pReply->abort();
-            loop.quit();
-        });
+        XAboutWidgetSslErrorsFunctor functorSslErrors;
+        functorSslErrors.pLoop = &loop;
+        QObject::connect(&manager, &QNetworkAccessManager::sslErrors, this, functorSslErrors);
         loop.exec();
 
         if (pReply->error() == QNetworkReply::NoError) {
